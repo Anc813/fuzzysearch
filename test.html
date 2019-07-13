@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>The Brand New Web Site</title>
+  <meta name="description" content="The Brand New Web Site">
+  <meta name="author" content="Barattalo.it">
+  <!-- <link rel="stylesheet" href="css/styles.css?v=1.0"> -->
+  <!--[if lt IE 9]>
+  <script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+  <![endif]-->
+  <style>
+    .highlight {
+        font-weight: bold;
+        color: red;
+    }
+  </style>
+</head>
+<body>
+
+  <input class="Typeahead-input" id="demo-input" type="text" name="q" placeholder="Search something">
+  <ul></ul>
+  <!-- run javascript at the end -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+  <script src="https://twitter.github.io/typeahead.js/releases/latest/typeahead.bundle.js"></script>
+  <script src="data.js"></script>
+  <script src="fuzzysearch.js"></script>
+  <!-- <script src="js/scripts.js"></script> -->
+  <script>
+    if (!String.prototype.startsWith) {
+      Object.defineProperty(String.prototype, 'startsWith', {
+        enumerable: false,
+        configurable: false,
+        writable: false,
+        value: function(searchString, position) {
+          position = position || 0;
+          return this.lastIndexOf(searchString, position) === position;
+      }
+  });
+  }
+
+    var highlight = function (str, matches, stag, etag) {
+        if (!stag) stag = '<span class="highlight">';
+        if (!etag) etag = '</span>';
+
+        // some from lodash libraries
+        /** Used to map characters to HTML entities. */
+        var htmlEscapes = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+            '`': '&#96;'
+        };
+
+        var chars = '\\w\'';
+        var reRegExpChars = /[\\^$.*+?()[\]{}|]/g;
+        matches = matches.replace(reRegExpChars, '\\$&');
+
+        function escapeHtmlChar(chr) {
+            return htmlEscapes[chr];
+        }
+
+        var re = new RegExp('[' + chars +']+','ig');
+
+        // var r = matches.match(/[\w\']+/ig);
+        var r = matches.match(re);
+        if (!r) return str;
+
+        // str = str.replace(/[&<>"'`]/g, escapeHtmlChar);
+        // chars = chars.replace(/[&<>"'`]/g, escapeHtmlChar);
+
+        // var rr = r.map(function(e){return '(\\\\W)('+e+')'});
+        // re = new RegExp('(\\W)(' + r.join('|') + ')', 'ig');
+        re = new RegExp('([^'+chars+'])(' + r.join('|') + ')', 'ig');
+        // str = (' ' + str).replace(re, '$1' + stag + '$2' + etag).slice(1);
+        str = (' ' + str).replace(re, '$1__stag__$2__etag__').slice(1);
+        str = str
+            .replace(/[&<>"'`]/g, escapeHtmlChar)
+            .replace(/__stag__/g, stag)
+            .replace(/__etag__/g, etag);
+        // str = str.split(stag).map(function (e) {
+        //     return e.split(etag).map(function (e) {
+        //         return e.replace(/[&<>"'`]/g, escapeHtmlChar);
+        //     }).join(etag);
+        // }).join(stag);
+
+        // var re = new RegExp('^(' + r.join('|') + ')', 'i');
+        // str = str.replace(re, stag+'$&'+etag);
+        return str;
+    }
+
+    // полное совпадение имеет приоритет
+    // начинается с.. имеет +
+    // чем ближе к началу, тем лучше
+    var customMatcher = function(strs, custom_config) {
+        var cache = [];
+        var config = {
+            // how many entries would be stored in cache
+            maxCacheEntries : 50,
+            // how many entried should have input, so results need to be added to cache
+            minInputSizeToCache : 200,
+            // regular expression of chars
+            charsRe : /[\w\']+/g,
+            // case insesitive
+            caseInsesitive: true
+        }
+        if (custom_config) for (var key in custom_config) { config[key] = custom_config[key]; }
+
+        return function findMatches(q) {
+            function checkIndex (i) {
+                var score = {
+                    exact : 0,
+                    starts : 0,
+                    offsets : [],
+                    offset_sum : 0,
+                    i : i
+                };
+                var str = config.caseInsesitive ? strs[i].toLowerCase() : strs[i]
+                var words = str.match(config.charsRe);
+                if (!words) return false;
+                var s = ' ' + words.join(' ') + ' ';
+                for (var j = 0; j < matches_length; j++) {
+                    // exact match
+                    var sss = matches[j];
+                    var index = s.indexOf(sss + ' ');
+                    if (index > -1) {
+                        score.exact ++;
+                        score.offsets.push(index);
+                        score.offset_sum += index;
+                        // filter irrelevant 
+                        // without this filter query "a a" will also find "abc edf"
+                        // with this filter only that who have two words started with "a" will be founded "ahc adc"
+                        // if (j < matches_length - 1) s = s.replace(sss, ''); // too slow
+                        if (j < matches_length - 1) {
+                            s = s.slice(0, index) + s.slice(s.indexOf(' ', index + 1));
+                        }
+                    }
+                    // start with
+                    else {
+                        index = s.indexOf(sss);
+                        if (index > -1) {
+                            score.starts++;
+                            score.offsets.push(index);
+                            score.offset_sum += index;
+                            // var re = new RegExp(sss+'[\\\\w\\\']+? ', '')
+                            // if (j < matches_length - 1) s = s.replace(re, ''); // too slow
+                            if (j < matches_length - 1) {
+                                s = s.slice(0, index) + s.slice(s.indexOf(' ', index + 1));
+                            }
+                        // exit if nothing found
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+                return score;
+            }
+
+            if (config.caseInsesitive) q = q.toLowerCase();
+            // no need to filter
+            if (q === '') return strs;
+
+            var matches = q.match(config.charsRe);
+            // no need to filter
+            if (!matches) return strs;
+
+            var results = [];
+            // look for cached results
+            var cached;
+            if (cache.length) {
+                var first = (q.indexOf(cache[0].q) === 0) ? cache[0] : false;
+                // find most longest previous result
+                cached = cache.reduce(function (p, c) {
+                    if (q.indexOf(c.text) === 0) {
+                        if (p) return (c.text.length > p.text.length) ? c : p;
+                        else return c;
+                    } else return p;
+                }, first);
+
+                // move to end of array
+                cache.splice(cache.indexOf(cached), 1);
+                cache.push(cached);
+
+                // return result immediately
+                if (cached && cached.text === q) {
+                    var data = cached.data;
+                    for(var i=0, l = data.length; i < l; i++) 
+                        results.push(strs[data[i]]);
+                    return results;
+                }
+
+                if (cached) cached = cached.data;
+            }
+
+            var scores = [];
+            for(var i = 0; i < matches.length; i++) 
+                matches[i] = ' ' + matches[i];
+
+            var matches_length = matches.length;
+
+            if (cached) {
+                for (var i = 0, l = cached.length; i < l; i++) {
+                    var score = checkIndex(cached[i]);
+                    if (score) scores.push(score);
+                }                
+            } else {
+                for (var i = 0, l = strs.length; i < l; i++) {
+                    var score = checkIndex(i);
+                    if (score) scores.push(score);
+                }                
+            }
+
+            scores.sort(function(a, b) {
+                function compareOffsets (a,b) {
+                    for(var i = 0, l = a.length; i < l; i++)
+                        if (a[i] - b[i]) return (a[i] - b[i]);
+                    return 0;
+                }
+                return -(a.exact - b.exact || a.starts - b.starts || b.offset_sum - a.offset_sum || a.i - b.i);
+            });
+
+            for(var i = 0, l = scores.length; i < l; i++)
+                results.push(strs[scores[i].i]);
+
+             if (config.maxCacheEntries && (cached ? cached.length : strs.length) >= config.minInputSizeToCache) {
+                var indicies = [];
+                for(var i = 0, l = scores.length; i < l; i++)
+                    indicies.push(scores[i].i);
+                cache.push({text: q, data: indicies});
+
+                // remove oldest item from cache
+                if (cache.length > config.maxCacheEntries) cache.shift();
+             }
+
+            return results;
+
+
+            // // search strings
+            // if (caseInsesitive) q = q.toLowerCase();
+            // var matches = q.match(/[\w\']+/g);
+            // if (!matches) {
+            //     return strs;
+            // }
+            // var ss = matches.map(function(e) {
+            //     return ' ' + e;
+            // });
+            // var ssl = ss.length;
+
+            // if (!ssl) {
+            //     return strs;
+            // }
+            // console.time('customMatcher');
+
+            // if (filterIndex) {
+            //     for (var i = 0, l = filterIndex.length; i < l; i++) {
+            //             var score = checkIndex(filterIndex[i]);
+            //             if (score) scores.push(score);
+            //     }
+            // } else {
+            //     for (var i = 0, l = strs.length; i < l; i++) {
+            //             var score = checkIndex(i);
+            //             if (score) scores.push(score);
+            //     }
+            // }
+
+
+            // scores.sort(function(a, b) {
+            //     // console.log('---')
+            //     // console.log(strs[a.i])
+            //     // console.log(a)
+            //     // console.log(strs[b.i])
+            //     // console.log(b)
+            //     // console.log(a.exact - b.exact || a.starts - b.starts || b.offset_sum - a.offset_sum || a.i - b.i);
+            //     return -(a.exact - b.exact || a.starts - b.starts || b.offset_sum - a.offset_sum || a.i - b.i);
+            // });
+
+            // var result = [];
+            // for (var i = 0, l = scores.length; i < l; i++) {
+            //     result.push(scores[i].i);
+            // }
+            
+            // console.timeEnd('customMatcher');
+            // console.log(filterIndex ? filterIndex.length : strs.length, result.length);
+            // return result;
+            // cb(result);            
+        }
+    }
+
+var fuzzyMatcher = function (strs) {
+  return function findMatches(q, cb) {
+    var a = FuzzySet(strs);
+    var result = a.get(q);
+
+    console.log(result);
+
+    cb(matches);
+};
+}
+
+var substringMatcher = function(strs) {
+  return function findMatches(q, cb) {
+    var matches, substringRegex;
+
+    // an array that will be populated with substring matches
+    matches = [];
+
+    // regex used to determine if a string contains the substring `q`
+    substrRegex = new RegExp(q, 'i');
+
+    // iterate through the pool of strings and for any string that
+    // contains the substring `q`, add it to the `matches` array
+    $.each(strs, function(i, str) {
+      if (substrRegex.test(str)) {
+        matches.push(str);
+    }
+});
+
+    cb(matches);
+};
+};
+
+  // var data = new Bloodhound({
+  //   datumTokenizer: Bloodhound.tokenizers.whitespace,
+  //   queryTokenizer: Bloodhound.tokenizers.whitespace,
+  //   // `states` is an array of state names defined in "The Basics"
+  //   local: some_data
+  // });
+$(function () {
+    var matcher = customMatcher(some_data);
+    $('#demo-input').on('keyup', function () {
+        var text = $(this).val();
+        // var arr;
+        // var exact;
+        // if (!text) return;
+        // if (cache.length) {
+        //     var first = (text.indexOf(cache[0].text) === 0 ) ? cache[0] : false;
+        //     arr = cache.reduce(function (p, c) {
+        //         if (text.indexOf(c.text) === 0) {
+        //             if (p) return (c.text.length > p.text.length) ? c : p;
+        //             else return c;
+        //         } else return p;
+        //     }, first );
+        // }
+
+        // if (arr && arr.text.length == text.length) {
+        //     exact = true;
+        // }
+
+        // if (arr) {
+        //     arr = arr.data;
+        // }
+
+        // if (!arr || !exact) {
+        //     arr = customMatcher(some_data)(text, arr );
+        //     if (arr.length > 150) cache.push({text:text, data:arr});
+        //     if (cache.length > 30) cache.shift();
+        // };
+
+        $('ul').empty();
+        console.time('customMatcher');
+        var data = matcher(text);
+        console.timeEnd('customMatcher');
+        var ul = document.getElementsByTagName('ul')[0];
+        data.slice(0, 10000).forEach(function (e) {
+            var li = document.createElement('div');
+            li.innerHTML = highlight(e, text);
+            // var li = $('<li></li>').html(highlight(e, text));
+            // $('ul').append(li);
+            ul.appendChild(li);
+        })
+    })
+})
+
+// $(function () {
+//   $('#demo-input').typeahead({
+//     hint: true,
+//     highlight: true,
+//     minLength: 1
+// },
+// {
+//     name: 'something',
+//     source: customMatcher(some_data)
+// });
+// })
+
+</script>
+</body>
+</html>
